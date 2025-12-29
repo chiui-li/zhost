@@ -6,37 +6,21 @@ const file = @import("./file.zig");
 
 var debugAllocator = std.heap.DebugAllocator(.{}).init;
 
-pub fn bufferedPrint() !void {
-    defer _ = debugAllocator.deinit();
-    const gpa = debugAllocator.allocator();
-    // const gpa = std.heap.page_allocator;
-    const s = std.time.milliTimestamp();
-    std.debug.print("time start: {d}\n", .{s});
-    var zhost = try Zhost.init(gpa);
-    defer zhost.deinit();
-    var host = HostConfig{
-        .content = "hello world",
-        .name = "test",
-        .id = 0,
-        .open = false,
-    };
-    for (0..1000) |i| {
-        host.id = i;
-        try zhost.addHostConfig(&host);
+pub const ZhostPATH = struct {
+    const hostsPath = "./hosts";
+    const hostsBakPath = "./hosts.bak";
+    var zhostRC: ?[]u8 = null;
+    const ZHOST_RC_ZON_NAME = ".zhostrc.zon";
+    fn getZhostRcZon() ![]u8 {
+        if (ZhostPATH.zhostRC) |v| {
+            return v;
+        }
+        const home = try std.process.getEnvVarOwned(std.heap.page_allocator, "HOME");
+        defer std.heap.page_allocator.free(home);
+        ZhostPATH.zhostRC = try std.fs.path.join(std.heap.page_allocator, &.{ home, ZhostPATH.ZHOST_RC_ZON_NAME });
+        return ZhostPATH.zhostRC.?;
     }
-
-    // try zhost.toZon();
-    try zhost.delHostConfig(88);
-    try zhost.delHostConfig(500);
-    // try zhost.toZon();
-    host.content = "hello world2hashgdhajskdgsahjkdgsakdgasdoqwgowquytwquyetwquyetwquetqweiuwqyteqwuetwqueywqteiuyqwevgcfsghxfaskadbvxhvkskfsa";
-    try zhost.updateHostConfig(678, &host);
-    const c = std.time.milliTimestamp();
-    std.debug.print("time end: {d}\n", .{c});
-
-    std.debug.print("time all: {d}\n", .{c - s});
-    try zhost.toZon();
-}
+};
 
 pub const HostConfig = struct {
     id: usize,
@@ -82,6 +66,42 @@ pub const Zhost = struct {
         };
     }
 
+    pub fn initByZon(gpa: std.mem.Allocator) !*Zhost {
+        const zonPath = try ZhostPATH.getZhostRcZon();
+        const hasZon = file.access(zonPath);
+        if (hasZon) {
+            const zhostRC = try file.read(zonPath, gpa);
+            defer gpa.free(zhostRC);
+
+            const zhostRCSentinel = try std.fmt.allocPrintSentinel(gpa, "{s}", .{zhostRC}, 0);
+            defer gpa.free(zhostRCSentinel);
+
+            const zhostItems = try std.zon.parse.fromSlice(ZhostZon, gpa, zhostRCSentinel, null, .{
+                .ignore_unknown_fields = true,
+            });
+
+            defer std.zon.parse.free(gpa, zhostItems);
+            return zhostItems.toZhost(gpa);
+        } else {
+            try file.write(
+                zonPath,
+                \\.{
+                \\  .hosts = .{
+                \\      .{
+                \\          .content = "127.0.0.1  demo.host.com\n",
+                \\          .name = "host-demo",
+                \\          .open = true,
+                \\          .id = 1,
+                \\      }
+                \\  },
+                \\}
+                ,
+            );
+            return try initByZon(gpa);
+        }
+        //
+    }
+
     pub fn addHostConfig(this: *Zhost, host: *HostConfig) !void {
         const owned = try host.toOwned(this.gpa);
         try this.hosts.append(this.gpa, owned);
@@ -118,11 +138,52 @@ pub const Zhost = struct {
     }
 
     pub fn toZon(this: @This()) !void {
-        var content = std.io.Writer.Allocating.init(this.gpa);
-        defer content.deinit();
-        const w = &content.writer;
-        try std.zon.stringify.serialize(this.hosts.items, .{ .whitespace = true }, w);
-        std.debug.print("{s}\n", .{content.written()});
+        var f = try file.writer(try ZhostPATH.getZhostRcZon());
+        defer f.close();
+        var buf: [1024]u8 = undefined;
+        var w = f.writer(&buf);
+        try std.zon.stringify.serialize(.{
+            .hosts = this.hosts.items,
+        }, .{ .whitespace = true }, &w.interface);
+    }
+
+    pub fn toHost(this: @This()) !void {
+        if (file.access(ZhostPATH.hostsBakPath)) {
+            var buffer: [1024]u8 = undefined;
+            const hostsFile = try file.writer(ZhostPATH.hostsPath);
+            var w = hostsFile.writer(&buffer);
+            _ = try w.interface.write(
+                \\##
+                \\# Host Database
+                \\#
+                \\# localhost is used to configure the loopback interface
+                \\# when the system is booting.  Do not change this entry.
+                \\##
+                \\127.0.0.1       localhost
+                \\255.255.255.255 broadcasthost
+                \\::1             localhost
+                ,
+            );
+            var hostConfigName: [512]u8 = undefined;
+            for (this.hosts.items) |item| {
+                if (item.open) {
+                    const name = try std.fmt.bufPrint(&hostConfigName,
+                        \\ 
+                        \\
+                        \\####### {s} #######
+                        \\
+                        \\
+                    , .{item.name});
+                    try w.interface.writeAll(name);
+
+                    try w.interface.writeAll(item.content);
+                }
+            }
+            try w.interface.flush();
+        } else {
+            try file.backupFile(ZhostPATH.hostsPath);
+            try this.toHost();
+        }
     }
 
     pub fn deinit(this: *Zhost) void {
@@ -130,15 +191,15 @@ pub const Zhost = struct {
             host.deinit(this.gpa);
         }
         this.hosts.deinit(this.gpa);
+        this.gpa.destroy(this);
     }
 };
-
-const ZHOST_RC_ZON = ".zhostrc.zon";
 
 const ZhostZon = struct {
     hosts: []*HostConfig,
     pub fn toZhost(this: @This(), gpa: std.mem.Allocator) !*Zhost {
         const zhost = try gpa.create(Zhost);
+        zhost.gpa = gpa;
         zhost.hosts = try std.ArrayList(*HostConfig).initCapacity(gpa, this.hosts.len + 10);
         for (this.hosts) |value| {
             try zhost.addHostConfig(value);
@@ -147,50 +208,26 @@ const ZhostZon = struct {
     }
 };
 
-pub fn zhostCreateByZon(gpa: std.mem.Allocator) !*Zhost {
-    var env = try std.process.getEnvMap(gpa);
-    const home = env.get("HOME") orelse "unknown";
-    defer env.deinit();
-    const zonPath = try std.fs.path.join(gpa, &.{ home, ZHOST_RC_ZON });
-    defer gpa.free(zonPath);
-    const hasZon = file.access(zonPath);
-    if (hasZon) {
-        const zhostRC = try file.read(zonPath, gpa);
-        defer gpa.free(zhostRC);
-
-        const zhostRCSentinel = try std.fmt.allocPrintSentinel(gpa, "{s}", .{zhostRC}, 0);
-        defer gpa.free(zhostRCSentinel);
-
-        const zhostItems = try std.zon.parse.fromSlice(ZhostZon, gpa, zhostRCSentinel, null, .{
-            .ignore_unknown_fields = true,
-        });
-
-        defer std.zon.parse.free(gpa, zhostItems);
-        return zhostItems.toZhost(gpa);
-    } else {
-        try file.write(
-            zonPath,
-            \\.{
-            \\  .hosts = .{
-            \\      .{
-            \\          .content = "www.demo.com 127.0.0.1\n",
-            \\          .name = "demo",
-            \\          .open = false,
-            \\          .id = 1,
-            \\      }
-            \\  },
-            \\}
-            \\
-            ,
-        );
-        return try zhostCreateByZon(gpa);
-    }
-    //
-}
-
-test "test zhostConfig" {
-    const gpa = std.testing.allocator;
-    const v = try zhostCreateByZon(gpa);
-    try v.toZon();
+pub fn bufferedPrint() !void {
+    defer _ = debugAllocator.deinit();
+    const gpa = debugAllocator.allocator();
+    const v = try Zhost.initByZon(gpa);
     defer v.deinit();
+    try v.toZon();
+    try v.toHost();
+    var content: [1024]u8 = undefined;
+    var name: [50]u8 = undefined;
+    for (2..100) |i| {
+        std.crypto.random.bytes(&content);
+        std.crypto.random.bytes(&name);
+        var c = HostConfig{
+            .id = i,
+            .open = true,
+            .content = &content,
+            .name = &name,
+        };
+        try v.addHostConfig(&c);
+        try v.toHost();
+        std.Thread.sleep(1000 * std.time.ns_per_ms);
+    }
 }
