@@ -43,6 +43,41 @@ pub fn write(path: []const u8, content: []const u8) !void {
     _ = try f.write(content);
 }
 
+//
+// 获取文件Writer
+//
+pub fn writer(path: []const u8) !std.fs.File {
+    var f: std.fs.File = undefined;
+    if (!std.fs.path.isAbsolute(path)) {
+        f = try std.fs.cwd().openFile(path, .{
+            .mode = .read_write,
+        });
+    } else {
+        f = try std.fs.openFileAbsolute(path, .{
+            .mode = .read_write,
+        });
+    }
+    return f;
+}
+
+pub fn backupFile(path: []const u8) !void {
+    if (access(path)) {
+        if (std.fs.path.isAbsolute(path)) {
+            const bk = try std.mem.concat(
+                std.heap.page_allocator,
+                u8,
+                &.{ path, ".bak" },
+            );
+            defer std.heap.page_allocator.free(bk);
+            try std.fs.copyFileAbsolute(
+                path,
+                bk,
+                .{},
+            );
+        }
+    }
+}
+
 pub fn access(path: []const u8) bool {
     const has = std.fs.accessAbsolute(path, .{ .mode = .read_only });
     if (has) |_| {
