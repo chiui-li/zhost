@@ -79,15 +79,12 @@ pub fn backupFile(path: []const u8) !void {
 }
 
 pub fn access(path: []const u8) bool {
-    const has = std.fs.accessAbsolute(path, .{ .mode = .read_only });
+    const has = std.fs.accessAbsolute(path, .{
+        .mode = .read_only,
+    });
     if (has) |_| {
         return true;
     } else |_| {
-        const hasRelative = std.fs.cwd().access(path, .{ .mode = .read_only });
-        if (hasRelative) |_| {
-            return true;
-        } else |_| {
-            return false;
-        }
+        return false;
     }
 }

@@ -7,8 +7,14 @@ const file = @import("./file.zig");
 var debugAllocator = std.heap.DebugAllocator(.{}).init;
 
 pub const ZhostPATH = struct {
-    const hostsPath = "./hosts";
-    const hostsBakPath = "./hosts.bak";
+    const hostsPath = switch (@import("builtin").os.tag) {
+        .windows => "C:\\Windows\\System32\\drivers\\etc\\hosts",
+        else => "/etc/hosts",
+    };
+    const hostsBakPath = switch (@import("builtin").os.tag) {
+        .windows => "C:\\Windows\\System32\\drivers\\etc\\hosts.bak",
+        else => "/etc/hosts.bak",
+    };
     var zhostRC: ?[]u8 = null;
     const ZHOST_RC_ZON_NAME = ".zhostrc.zon";
     fn getZhostRcZon() ![]u8 {
@@ -147,6 +153,21 @@ pub const Zhost = struct {
         }, .{ .whitespace = true }, &w.interface);
     }
 
+    pub fn print(this: @This()) !void {
+        var buf: [1024]u8 = undefined;
+        var w = std.fs.File.stdout().writer(&buf);
+        try std.zon.stringify.serialize(
+            .{
+                .hosts = this.hosts.items,
+            },
+            .{
+                .whitespace = true,
+            },
+            &w.interface,
+        );
+        try w.interface.flush();
+    }
+
     pub fn toHost(this: @This()) !void {
         if (file.access(ZhostPATH.hostsBakPath)) {
             var buffer: [1024]u8 = undefined;
@@ -167,15 +188,17 @@ pub const Zhost = struct {
             var hostConfigName: [512]u8 = undefined;
             for (this.hosts.items) |item| {
                 if (item.open) {
-                    const name = try std.fmt.bufPrint(&hostConfigName,
-                        \\ 
+                    const name = try std.fmt.bufPrint(
+                        &hostConfigName,
+                        \\
                         \\
                         \\####### {s} #######
                         \\
                         \\
-                    , .{item.name});
+                    ,
+                        .{item.name},
+                    );
                     try w.interface.writeAll(name);
-
                     try w.interface.writeAll(item.content);
                 }
             }
@@ -213,21 +236,21 @@ pub fn bufferedPrint() !void {
     const gpa = debugAllocator.allocator();
     const v = try Zhost.initByZon(gpa);
     defer v.deinit();
-    try v.toZon();
+    try v.print();
     try v.toHost();
-    var content: [1024]u8 = undefined;
-    var name: [50]u8 = undefined;
-    for (2..100) |i| {
-        std.crypto.random.bytes(&content);
-        std.crypto.random.bytes(&name);
-        var c = HostConfig{
-            .id = i,
-            .open = true,
-            .content = &content,
-            .name = &name,
-        };
-        try v.addHostConfig(&c);
-        try v.toHost();
-        std.Thread.sleep(1000 * std.time.ns_per_ms);
-    }
+    // var content: [1024]u8 = undefined;
+    // var name: [50]u8 = undefined;
+    // for (2..100) |i| {
+    //     std.crypto.random.bytes(&content);
+    //     std.crypto.random.bytes(&name);
+    //     var c = HostConfig{
+    //         .id = i,
+    //         .open = true,
+    //         .content = &content,
+    //         .name = &name,
+    //     };
+    //     try v.addHostConfig(&c);
+    //     try v.toHost();
+    //     std.Thread.sleep(1000 * std.time.ns_per_ms);
+    // }
 }
