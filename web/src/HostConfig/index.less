@@ -1,0 +1,76 @@
+    .z-host-config{
+        padding: var(--box-pd);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        font-size: var(--t-fs);
+        .z-group{
+            border-radius: 4px;
+            display: flex;
+            flex-flow: column nowrap;
+            gap: 6px;
+            width: 100%;
+            .z-group-name{
+                color: var(--t-secondary-color);
+                font-size: var(--t-fs);
+                font-family: var(--t-ff);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                .z-item-add{
+                    font-size: var(--t-fs);
+                    font-family: var(--t-ff);
+                    color: var(--t-secondary-color);
+                    &:hover {
+                        cursor: pointer;
+                        color: #000;
+                    }
+                }
+            }
+            .z-group-items{
+                display: flex;
+                flex-flow: column nowrap;
+                gap: 6px;
+            }
+            .z-item-box{
+                padding: var(--box-pd);
+                border-radius: var(--box-border-radius);
+                /* background-color: var(--box-hover-bg); */
+                width: 100%;
+                font-size: var(--t-fs);
+                font-family: var(--t-ff);
+                user-select: none;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                position: relative;
+                &:hover {
+                    cursor: pointer;
+                    background-color: var(--box-hover-bg);
+                    border-radius: var(--box-border-radius);
+                    box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
+                }
+                .z-item-box-name {
+                    overflow: hidden;
+                    word-wrap: break-word;
+                    white-space: nowrap;
+                    text-overflow: ellipsis;
+                }
+                .z-item-box-badge{
+                    /* margin-right: 10px; */
+                }
+            }
+            .z-item-active{
+                background-color: var(--box-hover-bg);
+                border-radius: var(--box-border-radius);
+                box-shadow: 0 0 2px rgba(0, 0, 0, 0.1);
+            }
+            .z-item-system{
+                color: var(--t-secondary-color);
+            }
+
+        }
+
+    }

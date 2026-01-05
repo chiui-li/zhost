@@ -1,24 +1,80 @@
-import { APITester } from "./APITester";
-import "./index.css";
+import "./app.less";
+import HostConfig from "./HostConfig";
+import Editor from "./Editor";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { type Host, AppContext } from "./context";
+import HostState from "./HostState";
+import { request, updateHostApi } from "./request";
 
-import logo from "./logo.svg";
-import reactLogo from "./react.svg";
-
+/**
+ * AppContextState
+ * @returns
+ */
 export function App() {
-  return (
-    <div className="app">
-      <div className="logo-container">
-        <img src={logo} alt="Bun Logo" className="logo bun-logo" />
-        <img src={reactLogo} alt="React Logo" className="logo react-logo" />
-      </div>
+  /**
+   * hostList
+   */
+  const [hostList, setHostList] = useState<Host[]>([
+    {
+      id: 0,
+      name: `系统 host`,
+      open: false,
+      content: "",
+    },
+  ]);
+  const [current, setCurrent] = useState(0);
+  const currentHost = useMemo(() => {
+    return hostList.find((i) => i?.id === current) || hostList[0];
+  }, [hostList, current]);
 
-      <h1>Bun + React</h1>
-      <p>
-        Edit <code>src/App.tsx</code> and save to test HMR
-      </p>
-      <APITester />
-    </div>
+  useEffect(() => {
+    request("/api/getHostList").then((result) => {
+      setCurrent(0);
+      setHostList((v) => v.concat(result.hosts));
+    });
+  }, []);
+  const editor = useRef<any>(null);
+  useEffect(() => {
+    if (currentHost?.id === 0) {
+      request("/api/sysHost").then((result: any) => {
+        setHostList((v) => [result].concat(v.slice(1)));
+        editor.current?.update(result.content);
+      });
+    }
+  }, [currentHost?.id]);
+
+  return (
+    <AppContext.Provider
+      value={{ hostList, setHostList, currentHost, setCurrent }}
+    >
+      <div className="z-page">
+        <div className="z-sider">
+          <div className="z-header">
+            <div className="z-logo">
+              <span className="z-logo-text">Zhost</span>
+            </div>
+            <HostConfig />
+          </div>
+        </div>
+
+        <div className="z-content">
+          <HostState />
+          {currentHost && (
+            <Editor
+              ref={editor}
+              key={currentHost?.id}
+              readonly={currentHost?.id === 0}
+              value={currentHost?.content || ""}
+              onChange={(content) => {
+                if (currentHost?.id === 0) return;
+                currentHost.content = content;
+                setHostList((v) => v.concat([]));
+                updateHostApi(currentHost);
+              }}
+            />
+          )}
+        </div>
+      </div>
+    </AppContext.Provider>
   );
 }
-
-export default App;

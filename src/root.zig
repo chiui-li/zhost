@@ -1,32 +1,9 @@
-//! By convention, root.zig is the root source file when making a library.
 const std = @import("std");
 const os = @import("builtin").target.os.tag;
 const print = std.debug.print;
-const file = @import("./file.zig");
+const Store = @import("./store.zig");
 
 var debugAllocator = std.heap.DebugAllocator(.{}).init;
-
-pub const ZhostPATH = struct {
-    const hostsPath = switch (@import("builtin").os.tag) {
-        .windows => "C:\\Windows\\System32\\drivers\\etc\\hosts",
-        else => "/etc/hosts",
-    };
-    const hostsBakPath = switch (@import("builtin").os.tag) {
-        .windows => "C:\\Windows\\System32\\drivers\\etc\\hosts.bak",
-        else => "/etc/hosts.bak",
-    };
-    var zhostRC: ?[]u8 = null;
-    const ZHOST_RC_ZON_NAME = ".zhostrc.zon";
-    fn getZhostRcZon() ![]u8 {
-        if (ZhostPATH.zhostRC) |v| {
-            return v;
-        }
-        const home = try std.process.getEnvVarOwned(std.heap.page_allocator, "HOME");
-        defer std.heap.page_allocator.free(home);
-        ZhostPATH.zhostRC = try std.fs.path.join(std.heap.page_allocator, &.{ home, ZhostPATH.ZHOST_RC_ZON_NAME });
-        return ZhostPATH.zhostRC.?;
-    }
-};
 
 pub const HostConfig = struct {
     id: usize,
@@ -59,198 +36,133 @@ pub const HostConfig = struct {
     }
 };
 
-pub const Zhost = struct {
-    gpa: std.mem.Allocator = std.heap.page_allocator,
+const ZhostZon = struct {
+    hosts: []*HostConfig,
+};
 
+pub const HostManager = struct {
+    store: Store.HostStore,
+    gpa: std.mem.Allocator,
     hosts: std.ArrayList(*HostConfig),
-
-    pub fn init(gpa: std.mem.Allocator) !Zhost {
-        const hosts = try std.ArrayList(*HostConfig).initCapacity(gpa, 10);
-        return Zhost{
-            .hosts = hosts,
+    //
+    //
+    //
+    pub fn init(gpa: std.mem.Allocator) !HostManager {
+        const store = try Store.HostStore.init(gpa);
+        var configHost = store.configHost;
+        const content = try configHost.read();
+        const contentSentinel = try std.fmt.allocPrintSentinel(gpa, "{s}", .{content}, 0);
+        const zon = try std.zon.parse.fromSlice(ZhostZon, gpa, contentSentinel, null, .{});
+        var hosts = try std.ArrayList(*HostConfig).initCapacity(gpa, 10);
+        for (zon.hosts) |v| {
+            const host = try v.toOwned(gpa);
+            try hosts.append(gpa, host);
+        }
+        return HostManager{
+            .store = store,
             .gpa = gpa,
+            .hosts = hosts,
         };
     }
 
-    pub fn initByZon(gpa: std.mem.Allocator) !*Zhost {
-        const zonPath = try ZhostPATH.getZhostRcZon();
-        const hasZon = file.access(zonPath);
-        if (hasZon) {
-            const zhostRC = try file.read(zonPath, gpa);
-            defer gpa.free(zhostRC);
+    pub fn deinit(this: *HostManager) void {
+        this.store.deinit();
+    }
 
-            const zhostRCSentinel = try std.fmt.allocPrintSentinel(gpa, "{s}", .{zhostRC}, 0);
-            defer gpa.free(zhostRCSentinel);
-
-            const zhostItems = try std.zon.parse.fromSlice(ZhostZon, gpa, zhostRCSentinel, null, .{
-                .ignore_unknown_fields = true,
-            });
-
-            defer std.zon.parse.free(gpa, zhostItems);
-            return zhostItems.toZhost(gpa);
-        } else {
-            try file.write(
-                zonPath,
-                \\.{
-                \\  .hosts = .{
-                \\      .{
-                \\          .content = "127.0.0.1  demo.host.com\n",
-                \\          .name = "host-demo",
-                \\          .open = true,
-                \\          .id = 1,
-                \\      }
-                \\  },
-                \\}
-                ,
-            );
-            return try initByZon(gpa);
+    pub fn addHostConfig(this: *HostManager, host: *HostConfig) !void {
+        const hostOwned = try host.toOwned(this.gpa);
+        try this.hosts.append(this.gpa, hostOwned);
+        try this.saveToHostsConfig();
+        if (host.open) {
+            try this.saveToSystemHost();
         }
-        //
     }
 
-    pub fn addHostConfig(this: *Zhost, host: *HostConfig) !void {
-        const owned = try host.toOwned(this.gpa);
-        try this.hosts.append(this.gpa, owned);
+    pub fn removeHostConfig(this: *HostManager, host: *HostConfig) !void {
+        var index: usize = 0;
+        for (this.hosts.items) |v| {
+            if (v.id == host.id) {
+                try this.hosts.remove(index);
+                return;
+            }
+            index += 1;
+        }
+        try this.saveToHostsConfig();
     }
 
-    pub fn updateHostConfig(this: *Zhost, id: usize, newHostConfig: *HostConfig) !void {
-        const owned = try newHostConfig.toOwned(this.gpa);
-        var i: usize = 0;
-
-        for (this.hosts.items) |host| {
-            if (id == host.id) {
-                host.deinit(this.gpa);
+    pub fn updateHostConfig(this: *HostManager, host: *HostConfig) !void {
+        var index: usize = 0;
+        const w = try host.toOwned(this.gpa);
+        var oldIsOpen: bool = false;
+        for (this.hosts.items) |v| {
+            if (v.id == w.id) {
+                oldIsOpen = v.open;
+                v.deinit(this.gpa);
                 break;
             }
-            i += 1;
+            index += 1;
         }
-
-        if (i < this.hosts.items.len) {
-            this.hosts.items[i] = owned;
-        }
-    }
-
-    pub fn delHostConfig(this: *Zhost, id: usize) !void {
-        var i: usize = 0;
-        for (this.hosts.items) |host| {
-            if (host.id == id) {
-                host.deinit(this.gpa);
-                break;
+        if (index < this.hosts.items.len) {
+            this.hosts.items[index] = w;
+            try this.saveToHostsConfig();
+            if (w.open) {
+                try this.saveToSystemHost();
+            } else if (!w.open and oldIsOpen) {
+                try this.saveToSystemHost();
             }
-            i += 1;
         }
-
-        _ = this.hosts.orderedRemove(i);
     }
 
-    pub fn toZon(this: @This()) !void {
-        var f = try file.writer(try ZhostPATH.getZhostRcZon());
-        defer f.close();
-        var buf: [1024]u8 = undefined;
-        var w = f.writer(&buf);
+    pub fn saveToHostsConfig(this: *HostManager) !void {
+        var s = std.io.Writer.Allocating.init(this.gpa);
         try std.zon.stringify.serialize(.{
             .hosts = this.hosts.items,
-        }, .{ .whitespace = true }, &w.interface);
+        }, .{}, &s.writer);
+        try this.store.configHost.cover(s.written());
     }
 
-    pub fn print(this: @This()) !void {
-        var buf: [1024]u8 = undefined;
-        var w = std.fs.File.stdout().writer(&buf);
-        try std.zon.stringify.serialize(
-            .{
-                .hosts = this.hosts.items,
-            },
-            .{
-                .whitespace = true,
-            },
-            &w.interface,
+    pub fn saveToSystemHost(this: *HostManager) !void {
+        try this.store.systemHost.cover(
+            \\##
+            \\# Host Database
+            \\#
+            \\# localhost is used to configure the loopback interface
+            \\# when the system is booting.  Do not change this entry.
+            \\##
+            \\127.0.0.1       localhost
+            \\255.255.255.255 broadcasthost
+            \\::1             localhost
+            \\
         );
-        try w.interface.flush();
-    }
-
-    pub fn toHost(this: @This()) !void {
-        if (file.access(ZhostPATH.hostsBakPath)) {
-            var buffer: [1024]u8 = undefined;
-            const hostsFile = try file.writer(ZhostPATH.hostsPath);
-            var w = hostsFile.writer(&buffer);
-            _ = try w.interface.write(
-                \\##
-                \\# Host Database
-                \\#
-                \\# localhost is used to configure the loopback interface
-                \\# when the system is booting.  Do not change this entry.
-                \\##
-                \\127.0.0.1       localhost
-                \\255.255.255.255 broadcasthost
-                \\::1             localhost
-                ,
-            );
-            var hostConfigName: [512]u8 = undefined;
-            for (this.hosts.items) |item| {
-                if (item.open) {
-                    const name = try std.fmt.bufPrint(
-                        &hostConfigName,
-                        \\
-                        \\
-                        \\####### {s} #######
-                        \\
-                        \\
-                    ,
-                        .{item.name},
-                    );
-                    try w.interface.writeAll(name);
-                    try w.interface.writeAll(item.content);
-                }
-            }
-            try w.interface.flush();
-        } else {
-            try file.backupFile(ZhostPATH.hostsPath);
-            try this.toHost();
-        }
-    }
-
-    pub fn deinit(this: *Zhost) void {
         for (this.hosts.items) |host| {
-            host.deinit(this.gpa);
+            if (host.open) {
+                const content = try std.fmt.allocPrint(
+                    this.gpa,
+                    \\
+                    \\####### {s} #######
+                    \\{s}
+                    \\
+                    \\
+                ,
+                    .{
+                        host.name,
+                        host.content,
+                    },
+                );
+                try this.store.systemHost.append(content);
+            }
         }
-        this.hosts.deinit(this.gpa);
-        this.gpa.destroy(this);
+    }
+
+    pub fn getHostsConfig(this: *HostManager) ![]const u8 {
+        return try this.store.configHost.read();
+    }
+
+    pub fn setHostsConfig(this: *HostManager, content: []const u8) ![]const u8 {
+        return try this.store.configHost.write(content);
+    }
+
+    pub fn getSystemHost(this: *HostManager) ![]const u8 {
+        return try this.store.systemHost.read();
     }
 };
-
-const ZhostZon = struct {
-    hosts: []*HostConfig,
-    pub fn toZhost(this: @This(), gpa: std.mem.Allocator) !*Zhost {
-        const zhost = try gpa.create(Zhost);
-        zhost.gpa = gpa;
-        zhost.hosts = try std.ArrayList(*HostConfig).initCapacity(gpa, this.hosts.len + 10);
-        for (this.hosts) |value| {
-            try zhost.addHostConfig(value);
-        }
-        return zhost;
-    }
-};
-
-pub fn bufferedPrint() !void {
-    defer _ = debugAllocator.deinit();
-    const gpa = debugAllocator.allocator();
-    const v = try Zhost.initByZon(gpa);
-    defer v.deinit();
-    try v.print();
-    try v.toHost();
-    // var content: [1024]u8 = undefined;
-    // var name: [50]u8 = undefined;
-    // for (2..100) |i| {
-    //     std.crypto.random.bytes(&content);
-    //     std.crypto.random.bytes(&name);
-    //     var c = HostConfig{
-    //         .id = i,
-    //         .open = true,
-    //         .content = &content,
-    //         .name = &name,
-    //     };
-    //     try v.addHostConfig(&c);
-    //     try v.toHost();
-    //     std.Thread.sleep(1000 * std.time.ns_per_ms);
-    // }
-}
