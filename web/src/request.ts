@@ -28,7 +28,11 @@ export async function request(
   );
   const text = await response?.text().catch(() => {
     message.error("Failed to parse response");
+    return Promise.reject(new Error("Failed to parse response"));
   });
+  if (text === undefined) {
+    return Promise.reject(new Error("Failed to parse response"));
+  }
   const json = ZON.parse(text, (_, v) => {
     if (typeof v === "string") {
       return decodeZonString(v).replaceAll("\\n", "\n");

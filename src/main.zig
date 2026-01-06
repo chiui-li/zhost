@@ -1,14 +1,8 @@
-//!
-//! Part of the Zap examples.
-//!
-//! Build me with `zig build     routes`.
-//! Run   me with `zig build run-routes`.
-//!
 const std = @import("std");
 const zap = @import("zap");
-const indexHtml = @embedFile("./dist/index.html");
-const indexJs = @embedFile("./dist/index.js");
-const indexCss = @embedFile("./dist/index.css");
+const indexHtml = @embedFile("./dist/index.html.br");
+const indexJs = @embedFile("./dist/index.js.br");
+const indexCss = @embedFile("./dist/index.css.br");
 const ZhostRoot = @import("./root.zig");
 // NOTE: this is a super simplified example, just using a hashmap to map
 // from HTTP path to request function.
@@ -29,6 +23,7 @@ fn dispatch_routes(r: zap.Request) !void {
 
 fn webSiteAssets(r: zap.Request) !void {
     if (r.path) |path| {
+        try r.setHeader("Content-Encoding", "br");
         if (std.mem.eql(u8, path, "/")) {
             try r.setHeader("content-type", "text/html; charset=utf-8");
             try r.sendBody(indexHtml);

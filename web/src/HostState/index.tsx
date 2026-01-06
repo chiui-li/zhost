@@ -7,7 +7,6 @@ import { Switch, Tag, Tooltip } from "antd";
 const HostState = () => {
   const { currentHost, setHostList } = useAppContext();
   const isSystemHost = currentHost?.id === 0;
-  console.log("currentHost", currentHost);
   return (
     <div className="z-host-state">
       <div className="z-host-state-content">
@@ -15,7 +14,9 @@ const HostState = () => {
           {currentHost?.name || "Unknown Host"}
         </div>
         <div className={cls("z-host-state-switch", isSystemHost && "z-hide")}>
-          <span className="z-host-state-switch-text">生效</span>
+          <Tooltip title="生效后写入系统host文件">
+            <span className="z-host-state-switch-text">生效</span>
+          </Tooltip>
           <Switch
             onChange={(checked) => {
               currentHost.open = checked;

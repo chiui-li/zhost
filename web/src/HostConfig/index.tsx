@@ -1,14 +1,35 @@
-import React from "preact/compat";
+import React, { useState } from "preact/compat";
 import "./index.less";
-import { PlusOutlined } from "@ant-design/icons";
-import { Badge, Tooltip } from "antd";
+import { EditFilled, PlusOutlined } from "@ant-design/icons";
+import { Badge, Form, Modal, Tooltip, Input } from "antd";
 import { cls } from "../utils";
 import QueueAnim from "rc-queue-anim";
 import { useAppContext } from "../context";
-import { addNewHost } from "../request";
+import { addNewHost, updateHostApi } from "../request";
+
 let i = 0;
+
 function HostConfig() {
   const { hostList, setHostList, currentHost, setCurrent } = useAppContext();
+  const [open, setOpen] = useState(false);
+  const [form] = Form.useForm();
+
+  //
+  const add = () => {
+    const timestamp = Date.now();
+    const newHost = {
+      id: timestamp + i,
+      name: `host 配置`,
+      open: false,
+      content: "www.demo.com 127.0.0.1",
+    };
+    i++;
+    if (hostList.find((item) => item.id === newHost.id)) {
+      return add();
+    }
+    setHostList(hostList.concat([newHost]));
+    addNewHost(newHost);
+  };
   return (
     <div className="z-host-config">
       <div className="z-group">
@@ -16,20 +37,7 @@ function HostConfig() {
           <span>HOST</span>
           <span className="z-item-add">
             <Tooltip placement="right" title="添加host配置">
-              <PlusOutlined
-                onClick={() => {
-                  const timestamp = Date.now();
-                  const newHost = {
-                    id: timestamp + i,
-                    name: `host 配置`,
-                    open: false,
-                    content: "www.demo.com 127.0.0.1",
-                  };
-                  i++;
-                  setHostList(hostList.concat([newHost]));
-                  addNewHost(newHost);
-                }}
-              />
+              <PlusOutlined onClick={add} />
             </Tooltip>
           </span>
         </div>
@@ -46,11 +54,6 @@ function HostConfig() {
                 host.id === 0 && "z-item-system",
               )}
             >
-              <div
-                className={cls(host.open && "z-item-open", "z-item-box-name")}
-              >
-                {host.name}
-              </div>
               {host.open && (
                 <Tooltip placement="right" title="当前配置已写入系统 host 文件">
                   <span>
@@ -58,9 +61,61 @@ function HostConfig() {
                   </span>
                 </Tooltip>
               )}
+              <div
+                className={cls(host.open && "z-item-open", "z-item-box-name")}
+              >
+                {host.name}
+              </div>
+              {host.id !== 0 && (
+                <EditFilled
+                  onClick={() => {
+                    form.setFieldsValue({ ...host });
+                    setOpen(true);
+                  }}
+                  className={cls("z-item-box-edit")}
+                />
+              )}
             </div>
           ))}
         </QueueAnim>
+        <Modal
+          open={open}
+          className="update-modal"
+          title="编辑"
+          cancelText="取消"
+          okText="确定"
+          onCancel={() => setOpen(false)}
+          onOk={() => {
+            form.validateFields().then((values) => {
+              setHostList((prev) =>
+                prev.map((item) => {
+                  if (item.id === currentHost?.id) {
+                    const n = { ...item, ...values };
+                    updateHostApi(n);
+                    return n;
+                  }
+                  return item;
+                }),
+              );
+              setOpen(false);
+            });
+          }}
+        >
+          <Form form={form} className="update-form" size="small">
+            <Form.Item
+              rules={[
+                {
+                  required: true,
+                  max: 16,
+                },
+              ]}
+              name="name"
+              label="名称"
+            >
+              <Input size="small" />
+            </Form.Item>
+          </Form>
+        </Modal>
       </div>
     </div>
   );
