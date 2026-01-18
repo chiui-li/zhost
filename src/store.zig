@@ -4,8 +4,8 @@ pub const FileManager = struct {
     gpa: std.mem.Allocator,
     path: []const u8,
     file: std.fs.File,
-    __cache: []u8 = undefined,
-    __did_updated_cache: bool = false,
+    cache: []u8 = undefined,
+    need_update_cache: bool = false,
     pub fn exists(path: []const u8) bool {
         std.fs.accessAbsolute(path, .{
             .mode = .read_only,
@@ -21,9 +21,9 @@ pub const FileManager = struct {
         var f = try allocator.create(FileManager);
         f.gpa = allocator;
         f.path = path;
-        const __cache = try allocator.alloc(u8, 2);
-        f.__cache = __cache;
-        f.__did_updated_cache = false;
+        const cache = try allocator.alloc(u8, 2);
+        f.cache = cache;
+        f.need_update_cache = false;
         if (!FileManager.exists(path)) {
             const fs = try std.fs.createFileAbsolute(path, .{
                 .truncate = true,
@@ -38,29 +38,29 @@ pub const FileManager = struct {
         const fs = try std.fs.openFileAbsolute(path, .{
             .mode = .read_write,
         });
-        f.__cache = __cache;
-        f.__did_updated_cache = false;
+        f.cache = cache;
+        f.need_update_cache = false;
         f.file = fs;
         return f;
     }
 
     pub fn deinit(this: *FileManager) void {
         this.file.close();
-        this.gpa.free(this.__cache);
+        this.gpa.free(this.cache);
     }
 
     pub fn read(this: *FileManager) ![]const u8 {
-        if (this.__did_updated_cache) {
-            return this.__cache;
+        if (this.need_update_cache) {
+            return this.cache;
         }
         const size = try this.file.getEndPos();
         var buf: [1024]u8 = undefined;
         var r = this.file.reader(&buf);
         const content = try r.interface.readAlloc(this.gpa, size);
-        this.gpa.free(this.__cache);
-        this.__cache = content;
-        this.__did_updated_cache = true;
-        return this.__cache;
+        this.gpa.free(this.cache);
+        this.cache = content;
+        this.need_update_cache = true;
+        return this.cache;
     }
 
     pub fn backup(this: *FileManager) !void {
@@ -76,7 +76,7 @@ pub const FileManager = struct {
         try this.file.seekTo(0);
         try this.file.writeAll(content);
         try this.file.setEndPos(content.len);
-        this.__did_updated_cache = false;
+        this.need_update_cache = false;
     }
 
     pub fn append(this: *FileManager, content: []const u8) !void {
@@ -85,7 +85,7 @@ pub const FileManager = struct {
         try this.file.writeAll(content);
         try this.file.setEndPos(end + content.len);
 
-        this.__did_updated_cache = false;
+        this.need_update_cache = false;
     }
 };
 
