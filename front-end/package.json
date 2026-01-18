@@ -1,0 +1,28 @@
+{
+  "name": "front-end",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.1.0",
+    "@codemirror/lang-javascript": "^6.2.4",
+    "antd": "^6.1.4",
+    "codemirror": "^6.0.2",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "zzon": "^1.7.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.2",
+    "@types/node": "^24.10.7",
+    "less": "^4.5.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-compression2": "^2.4.0"
+  }
+}

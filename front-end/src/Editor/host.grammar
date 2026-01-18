@@ -1,0 +1,14 @@
+@top Program { expression* }
+
+@skip { space }
+
+expression {
+  comment
+}
+
+@tokens {
+  space { @whitespace+ }
+  comment { "\\" ![\n]* }
+}
+
+@detectDelim

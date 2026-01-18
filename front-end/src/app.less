@@ -1,0 +1,72 @@
+:root {
+    --bg-color: #fff;
+    --t-color: black;
+    --t-secondary-color: gray;
+    --box-bg-color: lab(98.26% 0 0);
+    --box-border-radius: 6px;
+    --box-pd: 10px;
+    --box-hover-bg: rgba(0, 0, 0, 0.05);
+    --box-shadow: 0 0 2px rgba(0, 0, 0, 0.1);
+    --t-fs: 16px;
+    --t-ff: Arial, sans-serif;
+    --cm-fs: 20px;
+}
+
+
+.z-page {
+    height: 100vh;
+    width: 100vw;
+    background-color: var(--bg-color, #fff);
+    color: var(--t-color);
+    display: flex;
+}
+
+.z-content{
+    flex: auto;
+    background-color: var(--box-bg-color);
+    box-shadow: var(--box-shadow);
+    max-height: 100vh;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.z-sider {
+    width: 240px;
+    height: 100%;
+    background-color: var(--box-bg-color);
+    border-radius: var(--box-border-radius);
+    box-shadow: var(--box-shadow);
+    flex-shrink: 0;
+}
+
+.z-header{
+    .z-logo{
+        width: 100%;
+        height: 50px;
+        background-color: var(--box-bg-color);
+        border-radius: var(--box-border-radius);
+        box-shadow: var(--box-shadow);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--t-color);
+        padding: var(--box-pd);
+        font-size: var(--t-fs);
+        .z-logo-text{
+            font-size: 24px;
+            font-weight: bold;
+            font-size: var(--t-fs);
+            font-family: var(--t-ff);
+            text-shadow: 0 0 2px var(--t-secondary-color);
+            &:hover {
+                cursor: pointer;
+            }
+        }
+    }
+}
+
+
+.z-hide {
+    display: none !important;
+}
